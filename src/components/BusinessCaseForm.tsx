@@ -21,12 +21,9 @@ const businessCaseSchema = z.object({
   country: z.string().min(2, 'Country must be at least 2 characters'),
   industry: z.string().min(2, 'Industry must be at least 2 characters'),
   financials: z.object({
-    totalCost: z.number().min(0, 'Total cost must be a positive number'),
+    projectTimelineYears: z.number().min(1, 'Project timeline must be at least 1 year').max(10, 'Project timeline cannot exceed 10 years'),
     capex: z.number().min(0, 'CAPEX must be a positive number'),
     opex: z.number().min(0, 'OPEX must be a positive number'),
-  }).refine((data) => data.totalCost >= (data.capex + data.opex), {
-    message: "Total cost must be greater than or equal to CAPEX + OPEX",
-    path: ["totalCost"],
   }),
   customers: z.object({
     initialCount: z.number().min(1, 'Initial customer count must be at least 1'),
@@ -110,7 +107,7 @@ export function BusinessCaseForm() {
   const { register, handleSubmit, formState: { errors }, reset, getValues, setValue, watch } = useForm<BusinessCaseData>({
     resolver: zodResolver(businessCaseSchema),
     defaultValues: {
-      financials: { totalCost: 0, capex: 0, opex: 0 },
+      financials: { projectTimelineYears: 0, capex: 0, opex: 0 },
       customers: { initialCount: 0, growthRate: 0, arpu: 0 },
     },
     mode: 'onChange',
@@ -170,7 +167,7 @@ export function BusinessCaseForm() {
     });
 
     // Count financial fields
-    ['totalCost', 'capex', 'opex'].forEach(field => {
+    ['projectTimelineYears', 'capex', 'opex'].forEach(field => {
       totalFields++;
       if (isFieldFilled(formData.financials[field as keyof typeof formData.financials])) {
         filledFields++;
@@ -457,22 +454,25 @@ export function BusinessCaseForm() {
             <div className="space-y-4">
               <div>
                 <Label 
-                  htmlFor="totalCost"
+                  htmlFor="projectTimelineYears"
                   className="flex items-center gap-2"
-                  onMouseEnter={(e) => handleTooltip('Total Cost of Ownership includes all direct and indirect costs', e)}
+                  onMouseEnter={(e) => handleTooltip('Number of years to analyze the business case', e)}
                   onMouseLeave={hideTooltip}
                 >
-                  Total Cost of Ownership (TCO)
+                  Project Timeline (Years)
                   <InfoIcon className="w-4 h-4 text-muted-foreground" />
                 </Label>
                 <Input
-                  id="totalCost"
-                  value={formatCurrency(watch('financials.totalCost'))}
-                  onChange={(e) => handleCurrencyChange(e, 'financials.totalCost')}
-                  className={`mt-1 ${errors.financials?.totalCost ? 'border-red-500' : ''}`}
+                  id="projectTimelineYears"
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={watch('financials.projectTimelineYears')}
+                  onChange={(e) => setValue('financials.projectTimelineYears', Number(e.target.value), { shouldValidate: true })}
+                  className={`mt-1 ${errors.financials?.projectTimelineYears ? 'border-red-500' : ''}`}
                 />
-                {errors.financials?.totalCost && (
-                  <p className="text-red-500 text-sm mt-1">{errors.financials.totalCost?.message || 'Invalid value'}</p>
+                {errors.financials?.projectTimelineYears && (
+                  <p className="text-red-500 text-sm mt-1">{errors.financials.projectTimelineYears?.message || 'Invalid value'}</p>
                 )}
               </div>
 
@@ -650,10 +650,11 @@ export function BusinessCaseForm() {
             const newTab = activeTab === 'basic' ? 'basic' :
                           activeTab === 'financials' ? 'basic' :
                           activeTab === 'customers' ? 'financials' :
+                          activeTab === 'preview' ? 'customers' :
                           'customers';
             setActiveTab(newTab);
           }}
-          disabled={activeTab === 'basic' || activeTab === 'preview'}
+          disabled={activeTab === 'basic'}
         >
           Previous
         </Button>

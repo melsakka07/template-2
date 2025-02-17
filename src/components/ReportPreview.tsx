@@ -440,7 +440,7 @@ const ExpandableSection = ({ title, children }: { title: string; children: React
         <span className="font-medium text-sm">{title}</span>
         <ChevronRight className={`w-4 h-4 transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`} />
       </button>
-      <div className={`transition-all duration-300 ${isExpanded ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'} overflow-hidden`}>
+      <div className={`transition-all duration-300 ${isExpanded ? 'max-h-none opacity-100' : 'max-h-0 opacity-0'} overflow-hidden`}>
         <div className="p-4">
           {children}
         </div>
@@ -525,8 +525,8 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
             <Maximize2 className={`w-4 h-4 transition-transform duration-300 ${expandedCard === 'summary' ? 'rotate-180' : ''}`} />
           </div>
         </CardHeader>
-        <CardContent className={`transition-all duration-300 ${expandedCard === 'summary' ? 'max-h-[1000px]' : 'max-h-40'} overflow-hidden`}>
-          <p className="text-sm text-gray-600">{data.executiveSummary}</p>
+        <CardContent className={`transition-all duration-300 ${expandedCard === 'summary' ? 'max-h-none' : 'max-h-40'} overflow-hidden`}>
+          <p className="text-sm text-gray-600 whitespace-pre-wrap">{data.executiveSummary}</p>
         </CardContent>
       </Card>
 
@@ -614,8 +614,8 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                   </Button>
                 </div>
               </div>
-              <div className="h-[400px] w-full overflow-x-auto" id="revenue-chart">
-                <ResponsiveContainer>
+              <div className="w-full h-[400px]" id="revenue-chart">
+                <ResponsiveContainer width="100%" height="100%">
                   <LineChart
                     data={data.financialProjections}
                     margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
@@ -653,14 +653,14 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                       tickFormatter={(value) => formatCurrency(value)}
                       label={{ value: 'Revenue', angle: -90, position: 'insideLeft', offset: 0 }}
                     />
-                    <YAxis 
-                      yAxisId="right" 
+                    <YAxis
+                      yAxisId="right"
                       orientation="right"
                       tickFormatter={(value) => formatNumber(value)}
                       label={{ value: 'Customers', angle: 90, position: 'insideRight', offset: 0 }}
                     />
-                    <Tooltip content={<CustomTooltip prefix="$" />} />
-                    <Legend verticalAlign="bottom" height={36} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend />
                     <Line
                       yAxisId="left"
                       type="monotone"
@@ -670,7 +670,6 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                       strokeWidth={2}
                       dot={{ r: 4 }}
                       activeDot={{ r: 8 }}
-                      animationDuration={1500}
                     />
                     <Line
                       yAxisId="right"
@@ -681,22 +680,17 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                       strokeWidth={2}
                       dot={{ r: 4 }}
                       activeDot={{ r: 8 }}
-                      animationDuration={1500}
                     />
-                    <Brush 
-                      dataKey="year"
-                      height={30}
-                      stroke="#8884d8"
-                      tickFormatter={(value) => `Year ${value}`}
-                    />
-                    {zoomDomain.refAreaLeft && zoomDomain.refAreaRight && (
+                    {zoomDomain.refAreaLeft && zoomDomain.refAreaRight ? (
                       <ReferenceArea
                         yAxisId="left"
-                        x1={zoomDomain.refAreaLeft}
-                        x2={zoomDomain.refAreaRight}
+                        x1={Math.min(zoomDomain.refAreaLeft, zoomDomain.refAreaRight)}
+                        x2={Math.max(zoomDomain.refAreaLeft, zoomDomain.refAreaRight)}
                         strokeOpacity={0.3}
+                        fill="#8884d8"
+                        fillOpacity={0.1}
                       />
-                    )}
+                    ) : null}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -717,10 +711,10 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                   Download Chart
                 </Button>
               </div>
-              <div className="h-[400px] w-full" id="breakeven-chart">
-                <ResponsiveContainer>
+              <div className="w-full h-[400px]" id="breakeven-chart">
+                <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={cumulativeCashFlow}
+                    data={data.financialProjections}
                     margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
@@ -730,21 +724,34 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                     />
                     <YAxis 
                       tickFormatter={(value) => formatCurrency(value)}
-                      label={{ value: 'Cumulative Cash Flow', angle: -90, position: 'insideLeft', offset: -45 }}
+                      label={{ value: 'Amount', angle: -90, position: 'insideLeft', offset: -45 }}
                     />
                     <Tooltip content={<CustomTooltip prefix="$" />} />
                     <Legend />
-                    <ReferenceLine y={0} stroke="red" strokeDasharray="3 3" />
                     <Line
                       type="monotone"
-                      dataKey="cumulative"
-                      stroke="#ff7300"
-                      name="Cumulative Cash Flow"
+                      dataKey="revenue"
+                      name="Revenue"
+                      stroke="#8884d8"
                       strokeWidth={2}
                       dot={{ r: 4 }}
-                      activeDot={{ r: 8 }}
-                      animationDuration={1500}
                     />
+                    <Line
+                      type="monotone"
+                      dataKey="opex"
+                      name="Operating Expenses"
+                      stroke="#82ca9d"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                    />
+                    {typeof data.financialAnalysis.metrics.breakEvenPoint === 'number' && (
+                      <ReferenceLine
+                        y={data.financialAnalysis.metrics.breakEvenPoint as number}
+                        label="Break-even Point"
+                        stroke="#ff7300"
+                        strokeDasharray="3 3"
+                      />
+                    )}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -762,8 +769,8 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                   Download Chart
                 </Button>
               </div>
-              <div className="h-[400px] w-full" id="revenue-opex-chart">
-                <ResponsiveContainer>
+              <div className="w-full h-[400px]" id="revenue-opex-chart">
+                <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={data.financialProjections}
                     margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
@@ -818,8 +825,8 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                   Download Chart
                 </Button>
               </div>
-              <div className="h-[400px] w-full overflow-x-auto" id="cost-breakdown-chart">
-                <ResponsiveContainer>
+              <div className="w-full h-[400px]" id="cost-breakdown-chart">
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       activeIndex={activeIndex}
@@ -867,7 +874,7 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                   Download Chart
                 </Button>
               </div>
-              <div className="h-[400px] w-full" id="waterfall-chart">
+              <div className="min-h-[400px] h-auto w-full" id="waterfall-chart">
                 <WaterfallChart data={data.financialProjections} />
               </div>
               <p className="text-sm text-gray-500 mt-2">
@@ -903,7 +910,7 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
               {data.financialAnalysis.metrics.grossMargin && data.financialAnalysis.metrics.operatingMargin && (
                 <div className="mt-6">
                   <h4 className="font-medium text-sm mb-4">Margin Analysis</h4>
-                  <div className="h-[400px] w-full" id="margins-chart">
+                  <div className="min-h-[400px] h-auto w-full" id="margins-chart">
                     <ResponsiveContainer>
                       <LineChart
                         data={data.financialProjections.map((proj, index) => ({
@@ -969,7 +976,7 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
               {data.financialAnalysis.metrics.workingCapital && (
                 <div className="mt-6">
                   <h4 className="font-medium text-sm mb-4">Working Capital Requirements</h4>
-                  <div className="h-[300px] w-full" id="working-capital-chart">
+                  <div className="min-h-[300px] h-auto w-full" id="working-capital-chart">
                     <ResponsiveContainer>
                       <BarChart
                         data={data.financialProjections.map((proj, index) => ({
@@ -1113,7 +1120,7 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                     <div className="text-sm text-gray-600">
                       {data.riskAssessment.riskMonitoringApproach
                         .split('\n')
-                        .map((approach, index) => (
+                          .map((approach, index) => (
                           <p key={index} className="mb-2">{approach}</p>
                         ))}
                     </div>
@@ -1283,6 +1290,113 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+            </ExpandableSection>
+
+            <ExpandableSection title="Financial Calculations">
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Revenue Calculations */}
+                  <div className="p-4 bg-white border rounded-lg shadow-sm">
+                    <h4 className="font-medium text-sm mb-4">Revenue Calculations</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Annual Revenue</p>
+                        <p className="text-sm text-gray-600 font-mono bg-gray-50 p-2 rounded mt-1">
+                          Customers × ARPU × 12 months
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Monthly ARPU converted to annual revenue</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Customer Growth</p>
+                        <p className="text-sm text-gray-600 font-mono bg-gray-50 p-2 rounded mt-1">
+                          Initial Count × (1 + Growth Rate)^Year
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Compound annual growth rate applied to customer base</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cost Calculations */}
+                  <div className="p-4 bg-white border rounded-lg shadow-sm">
+                    <h4 className="font-medium text-sm mb-4">Cost Calculations</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Operating Expenses Growth</p>
+                        <p className="text-sm text-gray-600 font-mono bg-gray-50 p-2 rounded mt-1">
+                          Initial OPEX × (1.1)^Year
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">10% annual increase in operating expenses</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Working Capital</p>
+                        <p className="text-sm text-gray-600 font-mono bg-gray-50 p-2 rounded mt-1">
+                          Annual Revenue × 0.2
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">20% of annual revenue for operations</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Financial Metrics */}
+                  <div className="p-4 bg-white border rounded-lg shadow-sm">
+                    <h4 className="font-medium text-sm mb-4">Financial Metrics</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Net Present Value (NPV)</p>
+                        <p className="text-sm text-gray-600 font-mono bg-gray-50 p-2 rounded mt-1">
+                          Σ (Cash Flow / (1 + r)^t) - Initial Investment
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Sum of discounted cash flows minus initial investment, using 10% discount rate</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Return on Investment (ROI)</p>
+                        <p className="text-sm text-gray-600 font-mono bg-gray-50 p-2 rounded mt-1">
+                          ((Total Revenue - Total Costs) / Total Investment) × 100
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Percentage return on total investment</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Profitability Metrics */}
+                  <div className="p-4 bg-white border rounded-lg shadow-sm">
+                    <h4 className="font-medium text-sm mb-4">Profitability Metrics</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Gross Margin</p>
+                        <p className="text-sm text-gray-600 font-mono bg-gray-50 p-2 rounded mt-1">
+                          ((Revenue - COGS) / Revenue) × 100
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Percentage of revenue remaining after direct costs</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Operating Margin</p>
+                        <p className="text-sm text-gray-600 font-mono bg-gray-50 p-2 rounded mt-1">
+                          ((Revenue - OPEX) / Revenue) × 100
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Percentage of revenue remaining after operating expenses</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">EBITDA Margin</p>
+                        <p className="text-sm text-gray-600 font-mono bg-gray-50 p-2 rounded mt-1">
+                          (EBITDA / Revenue) × 100
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Earnings before interest, taxes, depreciation, and amortization as percentage of revenue</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="font-medium text-sm text-blue-700 mb-2">Key Assumptions</h4>
+                  <ul className="list-disc list-inside text-sm text-blue-600 space-y-1">
+                    <li>Discount Rate: 10% for NPV calculations</li>
+                    <li>OPEX Growth: 10% year-over-year increase</li>
+                    <li>Working Capital: 20% of annual revenue</li>
+                    <li>Customer Growth: Compound annual growth rate based on input rate</li>
+                  </ul>
                 </div>
               </div>
             </ExpandableSection>

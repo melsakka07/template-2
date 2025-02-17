@@ -11,7 +11,7 @@ const businessCaseSchema = z.object({
   country: z.string(),
   industry: z.string(),
   financials: z.object({
-    totalCost: z.number(),
+    projectTimelineYears: z.number(),
     capex: z.number(),
     opex: z.number(),
   }),
@@ -24,15 +24,14 @@ const businessCaseSchema = z.object({
 
 interface FinancialMetrics {
   npv: number;
-  irr: number;
-  paybackPeriod: number;
   roi: number;
-  ebitda: number[];
-  grossMargin: number[];
-  operatingMargin: number[];
+  paybackPeriod: number;
   breakEvenPoint: number;
   cac: number;
   clv: number;
+  grossMargin: number[];
+  operatingMargin: number[];
+  ebitda: number[];
   workingCapital: number[];
 }
 
@@ -46,66 +45,88 @@ function cleanJsonResponse(text: string): string {
   return text.slice(startIndex, endIndex + 1);
 }
 
-function calculateFinancialProjections(data: {
-  initialCount: number;
-  growthRate: number;
-  arpu: number;
-  opex: number;
-}) {
+function generateFinancialProjections(data: any) {
   const projections = [];
-  let customers = data.initialCount;
-  let opex = data.opex;
+  const years = data.financials.projectTimelineYears;
 
-  for (let year = 1; year <= 5; year++) {
-    const revenue = customers * data.arpu * 12;
+  for (let year = 1; year <= years; year++) {
+    const customers = Math.round(
+      data.customers.initialCount * Math.pow(1 + data.customers.growthRate / 100, year - 1)
+    );
+    const revenue = customers * data.customers.arpu * 12;
+    const opex = data.financials.opex * Math.pow(1.1, year - 1); // 10% increase per year
+
     projections.push({
       year,
-      revenue: Math.round(revenue),
-      customers: Math.round(customers),
-      opex: Math.round(opex),
+      revenue,
+      customers,
+      opex,
     });
-    customers *= (1 + data.growthRate);
-    opex *= 1.1; // 10% increase in OPEX each year
   }
 
   return projections;
 }
 
-function calculateFinancialMetrics(projections: any[], capex: number): FinancialMetrics {
+function calculateFinancialMetrics(data: any, projections: any[]) {
+  const initialInvestment = data.financials.capex;
   const discountRate = 0.1; // 10% discount rate
   
   // Calculate cash flows
   const cashFlows = projections.map(p => p.revenue - p.opex);
-  cashFlows.unshift(-capex); // Add initial investment as negative cash flow
-
+  
   // Calculate NPV
-  const npv = cashFlows.reduce((acc, cf, i) => 
-    acc + cf / Math.pow(1 + discountRate, i), 0);
+  const npv = cashFlows.reduce((acc, cf, index) => {
+    return acc + (cf / Math.pow(1 + discountRate, index + 1));
+  }, -initialInvestment);
 
   // Calculate ROI
-  const totalRevenue = projections.reduce((acc, p) => acc + p.revenue, 0);
-  const totalOpex = projections.reduce((acc, p) => acc + p.opex, 0);
-  const roi = ((totalRevenue - totalOpex - capex) / capex) * 100;
+  const totalRevenue = projections.reduce((sum, p) => sum + p.revenue, 0);
+  const totalCosts = initialInvestment + projections.reduce((sum, p) => sum + p.opex, 0);
+  const roi = ((totalRevenue - totalCosts) / totalCosts) * 100;
 
-  // Simplified IRR (approximation)
-  const irr = (totalRevenue - totalOpex - capex) / (capex * 5) * 100;
-
-  // Calculate Payback Period
-  let cumulativeCashFlow = -capex;
-  let paybackPeriod = 0;
-  for (let i = 0; i < projections.length; i++) {
-    cumulativeCashFlow += projections[i].revenue - projections[i].opex;
-    if (cumulativeCashFlow > 0 && paybackPeriod === 0) {
+  // Calculate payback period
+  let cumulativeCashFlow = -initialInvestment;
+  let paybackPeriod = data.financials.projectTimelineYears;
+  
+  for (let i = 0; i < cashFlows.length; i++) {
+    cumulativeCashFlow += cashFlows[i];
+    if (cumulativeCashFlow >= 0) {
       paybackPeriod = i + 1;
       break;
     }
   }
 
+  // Calculate break-even point
+  const averageRevenuePerCustomer = data.customers.arpu * 12;
+  const firstYearOpex = data.financials.opex;
+  const breakEvenPoint = Math.ceil((firstYearOpex + initialInvestment) / averageRevenuePerCustomer);
+
+  // Calculate CAC and CLV
+  const marketingCost = firstYearOpex * 0.3; // Assume 30% of OPEX is marketing
+  const firstYearCustomers = projections[0].customers;
+  const cac = marketingCost / firstYearCustomers;
+  const avgCustomerLifespan = 3; // Assume average customer stays for 3 years
+  const clv = averageRevenuePerCustomer * avgCustomerLifespan;
+
+  // Calculate margins
+  const grossMargin = projections.map(p => ((p.revenue - (p.opex * 0.6)) / p.revenue) * 100);
+  const operatingMargin = projections.map(p => ((p.revenue - p.opex) / p.revenue) * 100);
+  const ebitda = projections.map(p => ((p.revenue - p.opex) / p.revenue) * 100);
+  
+  // Calculate working capital (20% of revenue)
+  const workingCapital = projections.map(p => p.revenue * 0.2);
+
   return {
-    npv: Math.round(npv),
-    irr: Math.round(irr),
+    npv,
+    roi,
     paybackPeriod,
-    roi: Math.round(roi),
+    breakEvenPoint,
+    cac,
+    clv,
+    grossMargin,
+    operatingMargin,
+    ebitda,
+    workingCapital
   };
 }
 
@@ -252,15 +273,10 @@ export async function POST(req: Request) {
     const validatedData = businessCaseSchema.parse(body);
 
     // Pre-calculate the financial projections
-    const projections = calculateFinancialProjections({
-      initialCount: validatedData.customers.initialCount,
-      growthRate: validatedData.customers.growthRate / 100,
-      arpu: validatedData.customers.arpu,
-      opex: validatedData.financials.opex,
-    });
+    const projections = generateFinancialProjections(validatedData);
 
     // Calculate financial metrics
-    const financialMetrics = calculateFinancialMetrics(projections, validatedData.financials.capex);
+    const financialMetrics = calculateFinancialMetrics(validatedData, projections);
 
     // Generate additional analyses
     const [marketAnalysis, riskAnalysis] = await Promise.all([
@@ -276,7 +292,7 @@ Country: ${validatedData.country}
 Industry: ${validatedData.industry}
 
 Financial Information:
-- Total Cost of Ownership (TCO): $${validatedData.financials.totalCost}
+- Total Cost of Ownership (TCO): $${validatedData.financials.projectTimelineYears}
 - Capital Expenditure (CAPEX): $${validatedData.financials.capex}
 - Operating Expenditure (OPEX): $${validatedData.financials.opex}
 
@@ -287,7 +303,6 @@ Customer Information:
 
 Financial Metrics:
 - Net Present Value (NPV): $${financialMetrics.npv}
-- Internal Rate of Return (IRR): ${financialMetrics.irr}%
 - Return on Investment (ROI): ${financialMetrics.roi}%
 - Payback Period: ${financialMetrics.paybackPeriod} years
 
