@@ -145,46 +145,98 @@ Format:
 }
 
 async function generateRiskAnalysis(data: any, financialMetrics: FinancialMetrics) {
-  const riskPrompt = `Analyze the risks and mitigation strategies for this project:
+  const riskPrompt = `Analyze the risks and provide a comprehensive risk management plan for this business case:
 
-Project: ${data.projectName}
-Industry: ${data.industry}
-CAPEX: $${data.financials.capex}
-ROI: ${financialMetrics.roi}%
-Payback Period: ${financialMetrics.paybackPeriod} years
+Project Details:
+- Project Name: ${data.projectName}
+- Industry: ${data.industry}
+- Country: ${data.country}
+- Initial Investment (CAPEX): $${data.financials.capex}
+- Operating Costs (OPEX): $${data.financials.opex}
+- ROI: ${financialMetrics.roi}%
+- Payback Period: ${financialMetrics.paybackPeriod} years
+- Initial Customer Base: ${data.customers.initialCount}
+- Target Growth Rate: ${data.customers.growthRate}%
 
-Provide a JSON response with:
-1. Risk categories and specific risks
-2. Impact assessment
-3. Mitigation strategies
-4. Contingency plans
-5. Risk monitoring approach
+Return a JSON object with the following structure. Keep all responses as plain text with bullet points:
 
-Format:
 {
-  "operationalRisks": "analysis of operational risks",
-  "financialRisks": "analysis of financial risks",
-  "marketRisks": "analysis of market risks",
-  "technicalRisks": "analysis of technical risks",
-  "mitigationStrategies": "detailed mitigation approaches"
-}`;
+  "risks": "• Market Risk: [description]\\n• Financial Risk: [description]\\n• Operational Risk: [description]\\n• Technical Risk: [description]\\n• Regulatory Risk: [description]",
+  
+  "impactAssessment": "• High Impact Risks:\\n[list with ratings]\\n\\n• Medium Impact Risks:\\n[list with ratings]\\n\\n• Low Impact Risks:\\n[list with ratings]",
+  
+  "mitigationStrategies": "• Strategy 1: [description]\\n• Strategy 2: [description]\\n• Strategy 3: [description]",
+  
+  "contingencyPlans": "• Plan 1: [description]\\n• Plan 2: [description]\\n• Plan 3: [description]",
+  
+  "riskMonitoringApproach": "• Monitoring Framework:\\n[description]\\n\\n• KRIs:\\n[list]\\n\\n• Review Process:\\n[description]"
+}
 
-  const riskResponse = await openai.chat.completions.create({
-    model: 'gpt-4',
-    messages: [
-      {
-        role: 'system',
-        content: 'You are a risk management expert. Provide detailed risk analysis in JSON format.',
-      },
-      {
-        role: 'user',
-        content: riskPrompt,
-      },
-    ],
-    temperature: 0.7,
-  });
+Important: Ensure the response is a valid JSON object. Use \\n for line breaks. Do not include any markdown or special formatting.`;
 
-  return JSON.parse(cleanJsonResponse(riskResponse.choices[0].message.content || '{}'));
+  try {
+    const riskResponse = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a risk management expert. Provide a detailed risk assessment in the exact JSON format specified. Use bullet points and line breaks (\\n) for formatting. Do not include any markdown or special characters.',
+        },
+        {
+          role: 'user',
+          content: riskPrompt,
+        },
+      ],
+      temperature: 0.7,
+    });
+
+    const content = riskResponse.choices[0].message.content;
+    if (!content) {
+      throw new Error('Empty response from OpenAI');
+    }
+
+    try {
+      const cleanedContent = cleanJsonResponse(content);
+      const parsedResponse = JSON.parse(cleanedContent);
+
+      // Validate the response structure
+      const requiredFields = ['risks', 'impactAssessment', 'mitigationStrategies', 'contingencyPlans', 'riskMonitoringApproach'];
+      for (const field of requiredFields) {
+        if (!(field in parsedResponse)) {
+          throw new Error(`Missing required field: ${field}`);
+        }
+      }
+
+      // Ensure all fields are strings and replace any double escaped newlines
+      return {
+        risks: String(parsedResponse.risks).replace(/\\n/g, '\n'),
+        impactAssessment: String(parsedResponse.impactAssessment).replace(/\\n/g, '\n'),
+        mitigationStrategies: String(parsedResponse.mitigationStrategies).replace(/\\n/g, '\n'),
+        contingencyPlans: String(parsedResponse.contingencyPlans).replace(/\\n/g, '\n'),
+        riskMonitoringApproach: String(parsedResponse.riskMonitoringApproach).replace(/\\n/g, '\n')
+      };
+    } catch (parseError) {
+      console.error('Failed to parse risk analysis response:', content);
+      // Provide a fallback structured response
+      return {
+        risks: "• Market Risk: Potential market volatility\n• Financial Risk: Investment uncertainty\n• Operational Risk: Process inefficiencies\n• Technical Risk: Implementation challenges\n• Regulatory Risk: Compliance requirements",
+        impactAssessment: "• High Impact Risks:\n- Market volatility (High)\n- Financial uncertainty (High)\n\n• Medium Impact Risks:\n- Operational inefficiencies (Medium)\n\n• Low Impact Risks:\n- Minor technical issues (Low)",
+        mitigationStrategies: "• Diversification of market approach\n• Strong financial controls\n• Regular operational reviews\n• Technical redundancy measures\n• Compliance monitoring",
+        contingencyPlans: "• Market backup strategies\n• Financial reserves allocation\n• Operational backup procedures\n• Technical fallback solutions\n• Regulatory compliance plans",
+        riskMonitoringApproach: "• Weekly risk reviews\n• Monthly KPI monitoring\n• Quarterly assessments\n• Annual strategic review"
+      };
+    }
+  } catch (error) {
+    console.error('Error in risk analysis generation:', error);
+    // Provide a basic fallback response
+    return {
+      risks: "• Market Risk\n• Financial Risk\n• Operational Risk\n• Technical Risk\n• Regulatory Risk",
+      impactAssessment: "• High Impact Risks\n• Medium Impact Risks\n• Low Impact Risks",
+      mitigationStrategies: "• Risk mitigation strategy 1\n• Risk mitigation strategy 2\n• Risk mitigation strategy 3",
+      contingencyPlans: "• Contingency plan 1\n• Contingency plan 2\n• Contingency plan 3",
+      riskMonitoringApproach: "• Regular monitoring\n• KPI tracking\n• Periodic reviews"
+    };
+  }
 }
 
 export async function POST(req: Request) {

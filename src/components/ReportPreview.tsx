@@ -3,6 +3,21 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from 'recharts';
 
 interface ReportPreviewProps {
   data: {
@@ -55,7 +70,47 @@ interface ReportPreviewProps {
   onExport: (format: 'docx' | 'pdf') => void;
 }
 
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+
+function formatNumber(value: number): string {
+  if (value >= 1000000) {
+    return `${(value / 1000000).toFixed(1)}M`;
+  } else if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)}K`;
+  }
+  return value.toString();
+}
+
+function formatCurrency(value: number): string {
+  if (value >= 1000000) {
+    return `$${(value / 1000000).toFixed(1)}M`;
+  } else if (value >= 1000) {
+    return `$${(value / 1000).toFixed(1)}K`;
+  }
+  return `$${value}`;
+}
+
 export function ReportPreview({ data, onExport }: ReportPreviewProps) {
+  // Calculate cumulative cash flow for the break-even chart
+  const cumulativeCashFlow = data.financialProjections.reduce((acc: any[], projection: any) => {
+    const previousValue = acc.length > 0 ? acc[acc.length - 1].cumulative : 0;
+    const cashFlow = projection.revenue - projection.opex;
+    return [...acc, {
+      year: projection.year,
+      cumulative: previousValue + cashFlow,
+    }];
+  }, []);
+
+  // Prepare data for the cost breakdown pie chart
+  const costBreakdown = [
+    { name: 'CAPEX', value: data.financialProjections[0].opex },
+    { name: 'Year 1 OPEX', value: data.financialProjections[0].opex },
+    { name: 'Year 2 OPEX', value: data.financialProjections[1].opex },
+    { name: 'Year 3 OPEX', value: data.financialProjections[2].opex },
+    { name: 'Year 4 OPEX', value: data.financialProjections[3].opex },
+    { name: 'Year 5 OPEX', value: data.financialProjections[4].opex },
+  ];
+
   return (
     <div className="space-y-6">
       <Card>
@@ -64,6 +119,149 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-gray-600">{data.executiveSummary}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Financial Charts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-8">
+            {/* Revenue and Customer Growth Chart */}
+            <div>
+              <h4 className="font-medium text-sm mb-4">Revenue and Customer Growth</h4>
+              <div className="h-[400px] w-full">
+                <ResponsiveContainer>
+                  <LineChart
+                    data={data.financialProjections}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="year" />
+                    <YAxis 
+                      yAxisId="left"
+                      tickFormatter={(value) => formatCurrency(value)}
+                      label={{ value: 'Revenue', angle: -90, position: 'insideLeft' }}
+                    />
+                    <YAxis 
+                      yAxisId="right" 
+                      orientation="right"
+                      tickFormatter={(value) => formatNumber(value)}
+                      label={{ value: 'Customers', angle: 90, position: 'insideRight' }}
+                    />
+                    <Tooltip 
+                      formatter={(value: number, name: string) => {
+                        if (name === 'Revenue ($)') return [formatCurrency(value), 'Revenue'];
+                        return [formatNumber(value), 'Customers'];
+                      }}
+                    />
+                    <Legend />
+                    <Line
+                      yAxisId="left"
+                      type="monotone"
+                      dataKey="revenue"
+                      stroke="#8884d8"
+                      name="Revenue ($)"
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="customers"
+                      stroke="#82ca9d"
+                      name="Customers"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Break-even Analysis Chart */}
+            <div>
+              <h4 className="font-medium text-sm mb-4">Break-even Analysis</h4>
+              <div className="h-[400px] w-full">
+                <ResponsiveContainer>
+                  <LineChart
+                    data={cumulativeCashFlow}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="year" />
+                    <YAxis 
+                      tickFormatter={(value) => formatCurrency(value)}
+                      label={{ value: 'Cumulative Cash Flow', angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip 
+                      formatter={(value: number) => [formatCurrency(value), 'Cumulative Cash Flow']}
+                    />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="cumulative"
+                      stroke="#ff7300"
+                      name="Cumulative Cash Flow ($)"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Revenue vs OPEX Comparison */}
+            <div>
+              <h4 className="font-medium text-sm mb-4">Revenue vs Operating Expenses</h4>
+              <div className="h-[400px] w-full">
+                <ResponsiveContainer>
+                  <BarChart
+                    data={data.financialProjections}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="year" />
+                    <YAxis 
+                      tickFormatter={(value) => formatCurrency(value)}
+                      label={{ value: 'Amount', angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip 
+                      formatter={(value: number) => [formatCurrency(value), '']}
+                    />
+                    <Legend />
+                    <Bar dataKey="revenue" fill="#8884d8" name="Revenue ($)" />
+                    <Bar dataKey="opex" fill="#82ca9d" name="OPEX ($)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Cost Breakdown Pie Chart */}
+            <div>
+              <h4 className="font-medium text-sm mb-4">5-Year Cost Breakdown</h4>
+              <div className="h-[400px] w-full">
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={costBreakdown}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, value, percent }) => 
+                        `${name} (${formatCurrency(value)}, ${(percent * 100).toFixed(0)}%)`
+                      }
+                      outerRadius={150}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {costBreakdown.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      formatter={(value: number) => [formatCurrency(value), '']}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -164,26 +362,36 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
           <CardTitle>Risk Assessment</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div>
-              <h4 className="font-medium text-sm">Identified Risks</h4>
-              <p className="text-sm text-gray-600">{data.riskAssessment.risks}</p>
+              <h4 className="font-medium text-sm mb-2">Identified Risks</h4>
+              <div className="text-sm text-gray-600 whitespace-pre-line">
+                {data.riskAssessment.risks}
+              </div>
             </div>
             <div>
-              <h4 className="font-medium text-sm">Impact Assessment</h4>
-              <p className="text-sm text-gray-600">{data.riskAssessment.impactAssessment}</p>
+              <h4 className="font-medium text-sm mb-2">Impact Assessment</h4>
+              <div className="text-sm text-gray-600 whitespace-pre-line">
+                {data.riskAssessment.impactAssessment}
+              </div>
             </div>
             <div>
-              <h4 className="font-medium text-sm">Mitigation Strategies</h4>
-              <p className="text-sm text-gray-600">{data.riskAssessment.mitigationStrategies}</p>
+              <h4 className="font-medium text-sm mb-2">Mitigation Strategies</h4>
+              <div className="text-sm text-gray-600 whitespace-pre-line">
+                {data.riskAssessment.mitigationStrategies}
+              </div>
             </div>
             <div>
-              <h4 className="font-medium text-sm">Contingency Plans</h4>
-              <p className="text-sm text-gray-600">{data.riskAssessment.contingencyPlans}</p>
+              <h4 className="font-medium text-sm mb-2">Contingency Plans</h4>
+              <div className="text-sm text-gray-600 whitespace-pre-line">
+                {data.riskAssessment.contingencyPlans}
+              </div>
             </div>
             <div>
-              <h4 className="font-medium text-sm">Risk Monitoring Approach</h4>
-              <p className="text-sm text-gray-600">{data.riskAssessment.riskMonitoringApproach}</p>
+              <h4 className="font-medium text-sm mb-2">Risk Monitoring Approach</h4>
+              <div className="text-sm text-gray-600 whitespace-pre-line">
+                {data.riskAssessment.riskMonitoringApproach}
+              </div>
             </div>
           </div>
         </CardContent>
