@@ -1123,7 +1123,7 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                                 <div className="bg-white p-4 border rounded-lg shadow-lg">
                                   <p className="font-medium text-sm">{`Year ${label}`}</p>
                                   <p className="text-sm text-primary">
-                                    Working Capital: {formatCurrency(payload[0].value)}
+                                    Working Capital: {formatCurrency(payload[0].value ?? 0)}
                                   </p>
                                 </div>
                               );
