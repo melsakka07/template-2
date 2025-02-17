@@ -699,6 +699,138 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
               </p>
             </ExpandableSection>
 
+            {/* Margin Analysis Chart */}
+            <ExpandableSection title="Margin Analysis">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                <h4 className="font-medium text-sm">Margin Trends Over Time</h4>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadChart('margin-chart', 'margin-analysis')}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Chart
+                </Button>
+              </div>
+              <div className="w-full h-[400px]" id="margin-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={data.financialProjections.map((proj, index) => ({
+                      year: proj.year,
+                      grossMargin: data.financialAnalysis.metrics.grossMargin?.[index] ?? 0,
+                      operatingMargin: data.financialAnalysis.metrics.operatingMargin?.[index] ?? 0,
+                      ebitda: data.financialAnalysis.metrics.ebitda?.[index] ?? 0,
+                    }))}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="year"
+                      tickFormatter={(value) => `Year ${value}`}
+                    />
+                    <YAxis 
+                      tickFormatter={(value) => `${value}%`}
+                      label={{ value: 'Percentage', angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip content={<CustomTooltip prefix="%" />} />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="grossMargin"
+                      name="Gross Margin"
+                      stroke="#8884d8"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="operatingMargin"
+                      name="Operating Margin"
+                      stroke="#82ca9d"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="ebitda"
+                      name="EBITDA Margin"
+                      stroke="#ffc658"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="text-sm text-gray-500 mt-2">
+                This chart shows the evolution of key margin metrics over time, including Gross Margin, Operating Margin, and EBITDA Margin.
+              </p>
+            </ExpandableSection>
+
+            {/* Working Capital Requirements Chart */}
+            <ExpandableSection title="Working Capital Requirements">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                <h4 className="font-medium text-sm">Working Capital Trends</h4>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadChart('working-capital-chart', 'working-capital')}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Chart
+                </Button>
+              </div>
+              <div className="w-full h-[400px]" id="working-capital-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart
+                    data={data.financialProjections.map((proj, index) => ({
+                      year: proj.year,
+                      workingCapital: data.financialAnalysis.metrics.workingCapital?.[index] ?? 0,
+                      revenue: proj.revenue,
+                    }))}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="year"
+                      tickFormatter={(value) => `Year ${value}`}
+                    />
+                    <YAxis 
+                      yAxisId="left"
+                      tickFormatter={(value) => formatCurrency(value)}
+                      label={{ value: 'Working Capital', angle: -90, position: 'insideLeft' }}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      tickFormatter={(value) => formatCurrency(value)}
+                      label={{ value: 'Revenue', angle: 90, position: 'insideRight' }}
+                    />
+                    <Tooltip content={<CustomTooltip prefix="$" />} />
+                    <Legend />
+                    <Bar
+                      yAxisId="left"
+                      dataKey="workingCapital"
+                      name="Working Capital"
+                      fill="#8884d8"
+                      barSize={20}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="revenue"
+                      name="Revenue"
+                      stroke="#82ca9d"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="text-sm text-gray-500 mt-2">
+                This chart illustrates the working capital requirements in relation to revenue growth, helping identify potential funding needs.
+              </p>
+            </ExpandableSection>
+
             <ExpandableSection title="Break-even Analysis">
               <div className="flex justify-between items-center mb-4">
                 <h4 className="font-medium text-sm">Break-even Analysis</h4>
@@ -915,9 +1047,9 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                       <LineChart
                         data={data.financialProjections.map((proj, index) => ({
                           year: proj.year,
-                          grossMargin: data.financialAnalysis.metrics.grossMargin?.[index] ?? 0,
-                          operatingMargin: data.financialAnalysis.metrics.operatingMargin?.[index] ?? 0,
-                          ebitda: data.financialAnalysis.metrics.ebitda?.[index] ?? 0,
+                          grossMargin: data.financialAnalysis.metrics.grossMargin[index],
+                          operatingMargin: data.financialAnalysis.metrics.operatingMargin[index],
+                          ebitda: data.financialAnalysis.metrics.ebitda[index],
                         }))}
                         margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                       >
@@ -930,42 +1062,31 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                           tickFormatter={(value) => `${value}%`}
                           label={{ value: 'Percentage', angle: -90, position: 'insideLeft' }}
                         />
-                        <Tooltip 
-                          formatter={(value: number) => `${value.toFixed(1)}%`}
-                          content={({ active, payload, label }) => {
-                            if (active && payload && payload.length) {
-                              return (
-                                <div className="bg-white p-4 border rounded-lg shadow-lg">
-                                  <p className="font-medium text-sm">{`Year ${label}`}</p>
-                                  {payload.map((entry: any, index: number) => (
-                                    <p key={index} className="text-sm" style={{ color: entry.color }}>
-                                      {`${entry.name}: ${entry.value.toFixed(1)}%`}
-                                    </p>
-                                  ))}
-                                </div>
-                              );
-                            }
-                            return null;
-                          }}
-                        />
+                        <Tooltip content={<CustomTooltip prefix="%" />} />
                         <Legend />
                         <Line
                           type="monotone"
                           dataKey="grossMargin"
-                          stroke="#8884d8"
                           name="Gross Margin"
+                          stroke="#8884d8"
                           strokeWidth={2}
                           dot={{ r: 4 }}
-                          activeDot={{ r: 8 }}
                         />
                         <Line
                           type="monotone"
                           dataKey="operatingMargin"
-                          stroke="#82ca9d"
                           name="Operating Margin"
+                          stroke="#82ca9d"
                           strokeWidth={2}
                           dot={{ r: 4 }}
-                          activeDot={{ r: 8 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="ebitda"
+                          name="EBITDA Margin"
+                          stroke="#ffc658"
+                          strokeWidth={2}
+                          dot={{ r: 4 }}
                         />
                       </LineChart>
                     </ResponsiveContainer>
@@ -981,7 +1102,7 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                       <BarChart
                         data={data.financialProjections.map((proj, index) => ({
                           year: proj.year,
-                          workingCapital: data.financialAnalysis.metrics.workingCapital?.[index] ?? 0,
+                          workingCapital: data.financialAnalysis.metrics.workingCapital[index],
                         }))}
                         margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
                       >

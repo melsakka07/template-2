@@ -14,12 +14,15 @@ import { generateDocx } from '@/lib/export/docxConverter';
 import { generatePdf } from '@/lib/export/pdfConverter';
 import { Download, Upload, Save, InfoIcon } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { LLMProvider } from '@/lib/llm/config';
 
 const businessCaseSchema = z.object({
   projectName: z.string().min(3, 'Project name must be at least 3 characters'),
   company: z.string().min(2, 'Company name must be at least 2 characters'),
   country: z.string().min(2, 'Country must be at least 2 characters'),
   industry: z.string().min(2, 'Industry must be at least 2 characters'),
+  llmProvider: z.enum(['gpt4', 'deepseek'] as const),
   financials: z.object({
     projectTimelineYears: z.number().min(1, 'Project timeline must be at least 1 year').max(10, 'Project timeline cannot exceed 10 years'),
     capex: z.number().min(0, 'CAPEX must be a positive number'),
@@ -107,6 +110,7 @@ export function BusinessCaseForm() {
   const { register, handleSubmit, formState: { errors }, reset, getValues, setValue, watch } = useForm<BusinessCaseData>({
     resolver: zodResolver(businessCaseSchema),
     defaultValues: {
+      llmProvider: 'gpt4',
       financials: { projectTimelineYears: 0, capex: 0, opex: 0 },
       customers: { initialCount: 0, growthRate: 0, arpu: 0 },
     },
@@ -311,16 +315,33 @@ export function BusinessCaseForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)}>
       <div className="mb-6 flex justify-between items-center">
-        <div className="flex items-center space-x-2">
-          <Switch
-            id="auto-save"
-            checked={autoSaveEnabled}
-            onCheckedChange={(checked) => {
-              setAutoSaveEnabled(checked);
-              localStorage.setItem('autoSaveEnabled', JSON.stringify(checked));
-            }}
-          />
-          <Label htmlFor="auto-save">Auto-save form data</Label>
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="auto-save"
+              checked={autoSaveEnabled}
+              onCheckedChange={(checked) => {
+                setAutoSaveEnabled(checked);
+                localStorage.setItem('autoSaveEnabled', JSON.stringify(checked));
+              }}
+            />
+            <Label htmlFor="auto-save">Auto-save form data</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Label htmlFor="llm-provider">LLM Provider</Label>
+            <Select
+              value={watch('llmProvider')}
+              onValueChange={(value: LLMProvider) => setValue('llmProvider', value)}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Select LLM Provider" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gpt4">GPT-4</SelectItem>
+                <SelectItem value="deepseek">Deepseek</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <div className="flex space-x-4">
           <input
@@ -343,7 +364,7 @@ export function BusinessCaseForm() {
             <Upload className="w-4 h-4 mr-2" />
             Import Form Data
             {showTooltip && (
-              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white px-2 py-1 rounded text-sm">
+              <div className="tooltip-position tooltip-content">
                 {showTooltip}
               </div>
             )}
@@ -357,7 +378,7 @@ export function BusinessCaseForm() {
           >
             {isSaving ? (
               <>
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent mr-2" />
+                <div className="loading-spinner" />
                 Saving...
               </>
             ) : (
@@ -383,10 +404,10 @@ export function BusinessCaseForm() {
             <span>Form Progress</span>
             <span>{formProgress}%</span>
           </div>
-          <div className="w-full bg-secondary h-2 rounded-full">
+          <div className="h-2 w-full bg-gray-200 rounded-full">
             <div
-              className={`progress-bar`}
-              style={{ width: `${formProgress}%` }}
+              className="progress-bar progress-width"
+              style={{ '--progress-width': `${formProgress}%` } as React.CSSProperties}
             />
           </div>
         </div>
@@ -632,11 +653,11 @@ export function BusinessCaseForm() {
 
       {tooltipContent && (
         <div
-          className="fixed bg-black text-white px-4 py-2 rounded-lg text-sm z-50 pointer-events-none"
+          className="tooltip-fixed dynamic-position"
           style={{
-            left: tooltipPosition.x + 10,
-            top: tooltipPosition.y - 10,
-          }}
+            '--tooltip-top': `${tooltipPosition.y + 10}px`,
+            '--tooltip-left': `${tooltipPosition.x + 10}px`
+          } as React.CSSProperties}
         >
           {tooltipContent}
         </div>
@@ -679,7 +700,7 @@ export function BusinessCaseForm() {
             {isGenerating ? (
               <>
                 <span className="mr-2">Generating...</span>
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                <div className="loading-spinner" />
               </>
             ) : (
               'Generate Report'

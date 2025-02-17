@@ -1,15 +1,12 @@
-import OpenAI from 'openai';
 import { z } from 'zod';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import { getLLMClient, getLLMModel, type LLMProvider } from '@/lib/llm/config';
 
 const businessCaseSchema = z.object({
   projectName: z.string(),
   company: z.string(),
   country: z.string(),
   industry: z.string(),
+  llmProvider: z.enum(['gpt4', 'deepseek'] as const),
   financials: z.object({
     projectTimelineYears: z.number(),
     capex: z.number(),
@@ -130,7 +127,10 @@ function calculateFinancialMetrics(data: any, projections: any[]) {
   };
 }
 
-async function generateMarketAnalysis(data: any) {
+async function generateMarketAnalysis(data: any, llmProvider: LLMProvider) {
+  const client = getLLMClient(llmProvider);
+  const model = getLLMModel(llmProvider);
+
   const marketPrompt = `Analyze the market potential and competitive landscape for this project:
 
 Industry: ${data.industry}
@@ -154,8 +154,8 @@ Format:
   "entryBarriers": "main barriers to entry"
 }`;
 
-  const marketResponse = await openai.chat.completions.create({
-    model: 'gpt-4',
+  const marketResponse = await client.chat.completions.create({
+    model,
     messages: [
       {
         role: 'system',
@@ -172,7 +172,10 @@ Format:
   return JSON.parse(cleanJsonResponse(marketResponse.choices[0].message.content || '{}'));
 }
 
-async function generateRiskAnalysis(data: any, financialMetrics: FinancialMetrics) {
+async function generateRiskAnalysis(data: any, financialMetrics: FinancialMetrics, llmProvider: LLMProvider) {
+  const client = getLLMClient(llmProvider);
+  const model = getLLMModel(llmProvider);
+
   const riskPrompt = `Analyze the risks and provide a comprehensive risk management plan for this business case:
 
 Project Details:
@@ -198,13 +201,11 @@ Return a JSON object with the following structure. Keep all responses as plain t
   "contingencyPlans": "• Plan 1: [description]\\n• Plan 2: [description]\\n• Plan 3: [description]",
   
   "riskMonitoringApproach": "• Monitoring Framework:\\n[description]\\n\\n• KRIs:\\n[list]\\n\\n• Review Process:\\n[description]"
-}
-
-Important: Ensure the response is a valid JSON object. Use \\n for line breaks. Do not include any markdown or special formatting.`;
+}`;
 
   try {
-    const riskResponse = await openai.chat.completions.create({
-      model: 'gpt-4',
+    const riskResponse = await client.chat.completions.create({
+      model,
       messages: [
         {
           role: 'system',
@@ -271,6 +272,11 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const validatedData = businessCaseSchema.parse(body);
+    const llmProvider = validatedData.llmProvider;
+
+    // Get the appropriate client and model
+    const client = getLLMClient(llmProvider);
+    const model = getLLMModel(llmProvider);
 
     // Pre-calculate the financial projections
     const projections = generateFinancialProjections(validatedData);
@@ -280,8 +286,8 @@ export async function POST(req: Request) {
 
     // Generate additional analyses
     const [marketAnalysis, riskAnalysis] = await Promise.all([
-      generateMarketAnalysis(validatedData),
-      generateRiskAnalysis(validatedData, financialMetrics),
+      generateMarketAnalysis(validatedData, llmProvider),
+      generateRiskAnalysis(validatedData, financialMetrics, llmProvider),
     ]);
 
     const prompt = `Generate a comprehensive business case report for the following project. Include all provided analyses in your response.
@@ -338,8 +344,8 @@ Your response must be a JSON object with this structure:
   }
 }`;
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4',
+    const response = await client.chat.completions.create({
+      model,
       messages: [
         {
           role: 'system',
