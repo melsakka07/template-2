@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -13,6 +13,7 @@ import { ReportPreview } from '@/components/ReportPreview';
 import { generateDocx } from '@/lib/export/docxConverter';
 import { generatePdf } from '@/lib/export/pdfConverter';
 import { Download, Upload, Save } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 
 const businessCaseSchema = z.object({
   projectName: z.string().min(3, 'Project name must be at least 3 characters'),
@@ -41,9 +42,46 @@ interface ReportData {
     customers: number;
     opex: number;
   }[];
-  roiAnalysis: string;
-  riskAssessment: string;
-  implementationTimeline: string;
+  marketAnalysis: {
+    marketSize: string;
+    competitiveAnalysis: string;
+    marketTrends: string;
+    growthOpportunities: string;
+    entryBarriers: string;
+  };
+  financialAnalysis: {
+    metrics: {
+      npv: number;
+      irr: number;
+      paybackPeriod: number;
+      roi: number;
+    };
+    analysis: string;
+  };
+  riskAssessment: {
+    risks: string;
+    impactAssessment: string;
+    mitigationStrategies: string;
+    contingencyPlans: string;
+    riskMonitoringApproach: string;
+  };
+  implementationTimeline: {
+    phases: {
+      phase: string;
+      duration: string;
+      keyActivities: string;
+      deliverables: string;
+    }[];
+    criticalPath: string;
+    keyMilestones: string;
+  };
+  recommendations: {
+    strategic: string;
+    operational: string;
+    financial: string;
+  };
+  projectName: string;
+  company: string;
 }
 
 export function BusinessCaseForm() {
@@ -52,6 +90,13 @@ export function BusinessCaseForm() {
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showTooltip, setShowTooltip] = useState<string | null>(null);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
+    const saved = localStorage.getItem('autoSaveEnabled');
+    return saved ? JSON.parse(saved) : true;
+  });
+  const [formProgress, setFormProgress] = useState(0);
   
   const { register, handleSubmit, formState: { errors }, reset, getValues } = useForm<BusinessCaseData>({
     resolver: zodResolver(businessCaseSchema),
@@ -61,17 +106,65 @@ export function BusinessCaseForm() {
     },
   });
 
-  const handleExportFormData = () => {
+  useEffect(() => {
+    if (autoSaveEnabled) {
+      const formData = getValues();
+      localStorage.setItem('businessCaseFormData', JSON.stringify(formData));
+    }
+  }, [autoSaveEnabled, getValues]);
+
+  useEffect(() => {
+    const savedData = localStorage.getItem('businessCaseFormData');
+    if (savedData) {
+      try {
+        const parsedData = JSON.parse(savedData);
+        reset(parsedData);
+      } catch (error) {
+        console.error('Error loading saved form data:', error);
+      }
+    }
+  }, [reset]);
+
+  // Add helper function for checking filled fields
+  const isFieldFilled = (value: unknown): boolean => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') return value.trim() !== '';
+    if (typeof value === 'object') {
+      return Object.values(value as Record<string, unknown>).some(isFieldFilled);
+    }
+    return false;
+  };
+
+  useEffect(() => {
     const formData = getValues();
-    const blob = new Blob([JSON.stringify(formData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${formData.projectName || 'business-case'}-form-data.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const totalFields = Object.keys(businessCaseSchema.shape).length;
+    const filledFields = Object.entries(formData).filter(([_, value]) => isFieldFilled(value)).length;
+    
+    setFormProgress(Math.round((filledFields / totalFields) * 100));
+  }, [getValues]);
+
+  const handleExportFormData = async () => {
+    setIsSaving(true);
+    try {
+      const formData = getValues();
+      const blob = new Blob([JSON.stringify(formData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${formData.projectName || 'business-case'}-form-data.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setShowTooltip('Form data saved successfully!');
+      setTimeout(() => setShowTooltip(null), 3000);
+    } catch (error) {
+      setShowTooltip('Error saving form data');
+      setTimeout(() => setShowTooltip(null), 3000);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleImportFormData = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -140,30 +233,64 @@ export function BusinessCaseForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)}>
-      <div className="mb-6 flex justify-end space-x-4">
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleImportFormData}
-          accept=".json"
-          className="hidden"
-        />
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Upload className="w-4 h-4 mr-2" />
-          Import Form Data
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleExportFormData}
-        >
-          <Save className="w-4 h-4 mr-2" />
-          Save Form Data
-        </Button>
+      <div className="mb-6 flex justify-between items-center">
+        <div className="flex items-center space-x-2">
+          <Switch
+            id="auto-save"
+            checked={autoSaveEnabled}
+            onCheckedChange={(checked) => {
+              setAutoSaveEnabled(checked);
+              localStorage.setItem('autoSaveEnabled', JSON.stringify(checked));
+            }}
+          />
+          <Label htmlFor="auto-save">Auto-save form data</Label>
+        </div>
+        <div className="flex space-x-4">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImportFormData}
+            accept=".json"
+            className="hidden"
+            aria-label="Import form data from JSON file"
+            id="import-form-data"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            aria-controls="import-form-data"
+            className="relative"
+            disabled={isSaving}
+          >
+            <Upload className="w-4 h-4 mr-2" />
+            Import Form Data
+            {showTooltip && (
+              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white px-2 py-1 rounded text-sm">
+                {showTooltip}
+              </div>
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleExportFormData}
+            disabled={isSaving}
+            className="relative"
+          >
+            {isSaving ? (
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent mr-2" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 mr-2" />
+                Save Form Data
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -174,6 +301,19 @@ export function BusinessCaseForm() {
           <TabsTrigger value="preview" disabled={!reportData}>Preview</TabsTrigger>
         </TabsList>
 
+        <div className="mt-2 mb-4">
+          <div className="flex justify-between text-sm text-muted-foreground mb-1">
+            <span>Form Progress</span>
+            <span>{formProgress}%</span>
+          </div>
+          <div className="w-full bg-secondary h-2 rounded-full">
+            <div
+              className={`progress-bar`}
+              style={{ width: `${formProgress}%` }}
+            />
+          </div>
+        </div>
+
         <TabsContent value="basic">
           <Card className="p-6">
             <div className="space-y-4">
@@ -182,8 +322,12 @@ export function BusinessCaseForm() {
                 <Input
                   id="projectName"
                   {...register('projectName')}
-                  className="mt-1"
+                  className={`mt-1 ${errors.projectName ? 'border-red-500' : ''}`}
+                  aria-describedby="projectName-help"
                 />
+                <p id="projectName-help" className="text-sm text-muted-foreground mt-1">
+                  Enter a unique name for your business case project
+                </p>
                 {errors.projectName && (
                   <p className="text-red-500 text-sm mt-1">{errors.projectName.message}</p>
                 )}

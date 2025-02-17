@@ -77,6 +77,14 @@
 
 @layer utilities {
   .text-balance {
-    text-wrap: balance;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    -webkit-hyphens: auto;
+    -ms-hyphens: auto;
+    hyphens: auto;
+  }
+
+  .progress-bar {
+    @apply bg-primary h-full rounded-full transition-all duration-300;
   }
 }

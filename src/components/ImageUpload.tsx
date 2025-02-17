@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
-import { Image as ImageIcon, X } from "lucide-react";
+import { Image as ImageIcon, X, Upload } from "lucide-react";
 import Image from "next/image";
+import { Button } from "@/components/ui/button";
 
 interface ImageUploadProps {
   onImageChange: (file: File | null) => void;
@@ -45,8 +46,10 @@ export default function ImageUpload({ onImageChange }: ImageUploadProps) {
             type="button"
             onClick={removeImage}
             className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full"
+            aria-label="Remove image"
+            title="Remove image"
           >
-            <X size={20} />
+            <X size={20} aria-hidden="true" />
           </button>
         </div>
       ) : (
@@ -71,6 +74,16 @@ export default function ImageUpload({ onImageChange }: ImageUploadProps) {
         className="hidden"
         ref={fileInputRef}
       />
+      <Button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="w-full"
+        aria-label="Upload image"
+        title="Upload image"
+      >
+        <Upload className="w-4 h-4 mr-2" />
+        Upload Image
+      </Button>
     </div>
   );
 }

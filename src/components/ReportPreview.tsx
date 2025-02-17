@@ -17,7 +17,11 @@ import {
   PieChart,
   Pie,
   Cell,
+  ReferenceLine
 } from 'recharts';
+import { Download } from 'lucide-react';
+import { curveMonotoneX } from 'd3-shape';
+import { format } from 'date-fns';
 
 interface ReportPreviewProps {
   data: {
@@ -66,7 +70,10 @@ interface ReportPreviewProps {
       operational: string;
       financial: string;
     };
+    projectName: string;
+    company: string;
   };
+  onExport: (format: 'docx' | 'pdf') => Promise<void>;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
@@ -89,7 +96,52 @@ function formatCurrency(value: number): string {
   return `$${value}`;
 }
 
-export function ReportPreview({ data }: ReportPreviewProps) {
+// Add custom tooltip component
+const CustomTooltip = ({ active, payload, label, prefix = '' }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white p-4 border rounded-lg shadow-lg">
+        <p className="font-medium text-sm">{`Year ${label}`}</p>
+        {payload.map((entry: any, index: number) => (
+          <p key={index} className="text-sm" style={{ color: entry.color }}>
+            {`${entry.name}: ${prefix}${entry.value.toLocaleString()}`}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
+// Update the downloadChart function
+const downloadChart = (chartId: string, fileName: string) => {
+  const chartSvg = document.querySelector(`#${chartId} svg`);
+  if (chartSvg) {
+    const svgData = new XMLSerializer().serializeToString(chartSvg);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    
+    img.onload = () => {
+      if (ctx) {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        const pngFile = canvas.toDataURL('image/png');
+        const downloadLink = document.createElement('a');
+        downloadLink.download = `${fileName}.png`;
+        downloadLink.href = pngFile;
+        downloadLink.click();
+      }
+    };
+    
+    img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+  }
+};
+
+export function ReportPreview({ data, onExport }: ReportPreviewProps) {
   const handleExport = async (format: 'docx' | 'pdf') => {
     try {
       const response = await fetch(`/api/export/${format}`, {
@@ -162,15 +214,28 @@ export function ReportPreview({ data }: ReportPreviewProps) {
           <div className="space-y-8">
             {/* Revenue and Customer Growth Chart */}
             <div>
-              <h4 className="font-medium text-sm mb-4">Revenue and Customer Growth</h4>
-              <div className="h-[400px] w-full">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="font-medium text-sm">Revenue and Customer Growth</h4>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadChart('revenue-chart', 'revenue-growth')}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Chart
+                </Button>
+              </div>
+              <div className="h-[400px] w-full" id="revenue-chart">
                 <ResponsiveContainer>
                   <LineChart
                     data={data.financialProjections}
                     margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="year" />
+                    <XAxis 
+                      dataKey="year"
+                      tickFormatter={(value) => `Year ${value}`}
+                    />
                     <YAxis 
                       yAxisId="left"
                       tickFormatter={(value) => formatCurrency(value)}
@@ -182,19 +247,18 @@ export function ReportPreview({ data }: ReportPreviewProps) {
                       tickFormatter={(value) => formatNumber(value)}
                       label={{ value: 'Customers', angle: 90, position: 'insideRight', offset: -45 }}
                     />
-                    <Tooltip 
-                      formatter={(value: number, name: string) => {
-                        if (name === 'Revenue ($)') return [formatCurrency(value), 'Revenue'];
-                        return [formatNumber(value), 'Customers'];
-                      }}
-                    />
+                    <Tooltip content={<CustomTooltip prefix="$" />} />
                     <Legend />
                     <Line
                       yAxisId="left"
                       type="monotone"
                       dataKey="revenue"
                       stroke="#8884d8"
-                      name="Revenue ($)"
+                      name="Revenue"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                      activeDot={{ r: 8 }}
+                      animationDuration={1500}
                     />
                     <Line
                       yAxisId="right"
@@ -202,6 +266,10 @@ export function ReportPreview({ data }: ReportPreviewProps) {
                       dataKey="customers"
                       stroke="#82ca9d"
                       name="Customers"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                      activeDot={{ r: 8 }}
+                      animationDuration={1500}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -210,28 +278,44 @@ export function ReportPreview({ data }: ReportPreviewProps) {
 
             {/* Break-even Analysis Chart */}
             <div>
-              <h4 className="font-medium text-sm mb-4">Break-even Analysis</h4>
-              <div className="h-[400px] w-full">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="font-medium text-sm">Break-even Analysis</h4>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadChart('breakeven-chart', 'breakeven-analysis')}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Chart
+                </Button>
+              </div>
+              <div className="h-[400px] w-full" id="breakeven-chart">
                 <ResponsiveContainer>
                   <LineChart
                     data={cumulativeCashFlow}
                     margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="year" />
+                    <XAxis 
+                      dataKey="year"
+                      tickFormatter={(value) => `Year ${value}`}
+                    />
                     <YAxis 
                       tickFormatter={(value) => formatCurrency(value)}
                       label={{ value: 'Cumulative Cash Flow', angle: -90, position: 'insideLeft', offset: -45 }}
                     />
-                    <Tooltip 
-                      formatter={(value: number) => [formatCurrency(value), 'Cumulative Cash Flow']}
-                    />
+                    <Tooltip content={<CustomTooltip prefix="$" />} />
                     <Legend />
+                    <ReferenceLine y={0} stroke="red" strokeDasharray="3 3" />
                     <Line
                       type="monotone"
                       dataKey="cumulative"
                       stroke="#ff7300"
-                      name="Cumulative Cash Flow ($)"
+                      name="Cumulative Cash Flow"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                      activeDot={{ r: 8 }}
+                      animationDuration={1500}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -240,25 +324,56 @@ export function ReportPreview({ data }: ReportPreviewProps) {
 
             {/* Revenue vs OPEX Comparison */}
             <div>
-              <h4 className="font-medium text-sm mb-4">Revenue vs Operating Expenses</h4>
-              <div className="h-[400px] w-full">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="font-medium text-sm">Revenue vs Operating Expenses</h4>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadChart('revenue-opex-chart', 'revenue-opex-comparison')}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Chart
+                </Button>
+              </div>
+              <div className="h-[400px] w-full" id="revenue-opex-chart">
                 <ResponsiveContainer>
                   <BarChart
                     data={data.financialProjections}
                     margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="year" />
+                    <XAxis 
+                      dataKey="year"
+                      tickFormatter={(value) => `Year ${value}`}
+                    />
                     <YAxis 
                       tickFormatter={(value) => formatCurrency(value)}
                       label={{ value: 'Amount', angle: -90, position: 'insideLeft', offset: -45 }}
                     />
-                    <Tooltip 
-                      formatter={(value: number) => [formatCurrency(value), '']}
-                    />
+                    <Tooltip content={<CustomTooltip prefix="$" />} />
                     <Legend />
-                    <Bar dataKey="revenue" fill="#8884d8" name="Revenue ($)" />
-                    <Bar dataKey="opex" fill="#82ca9d" name="OPEX ($)" />
+                    <Bar 
+                      dataKey="revenue" 
+                      fill="#8884d8" 
+                      name="Revenue"
+                      animationDuration={1500}
+                      radius={[4, 4, 0, 0]}
+                    >
+                      {data.financialProjections.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fillOpacity={0.8 + (index * 0.04)} />
+                      ))}
+                    </Bar>
+                    <Bar 
+                      dataKey="opex" 
+                      fill="#82ca9d" 
+                      name="OPEX"
+                      animationDuration={1500}
+                      radius={[4, 4, 0, 0]}
+                    >
+                      {data.financialProjections.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fillOpacity={0.8 + (index * 0.04)} />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -266,8 +381,18 @@ export function ReportPreview({ data }: ReportPreviewProps) {
 
             {/* Cost Breakdown Pie Chart */}
             <div>
-              <h4 className="font-medium text-sm mb-4">5-Year Cost Breakdown</h4>
-              <div className="h-[400px] w-full">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="font-medium text-sm">5-Year Cost Breakdown</h4>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadChart('cost-breakdown-chart', 'cost-breakdown')}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Chart
+                </Button>
+              </div>
+              <div className="h-[400px] w-full" id="cost-breakdown-chart">
                 <ResponsiveContainer>
                   <PieChart>
                     <Pie
@@ -281,13 +406,20 @@ export function ReportPreview({ data }: ReportPreviewProps) {
                       outerRadius={150}
                       fill="#8884d8"
                       dataKey="value"
+                      animationDuration={1500}
                     >
                       {costBreakdown.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={COLORS[index % COLORS.length]}
+                          strokeWidth={2}
+                          stroke="#fff"
+                        />
                       ))}
                     </Pie>
                     <Tooltip 
-                      formatter={(value: number) => [formatCurrency(value), '']}
+                      content={<CustomTooltip prefix="$" />}
+                      formatter={(value: number) => formatCurrency(value)}
                     />
                   </PieChart>
                 </ResponsiveContainer>
