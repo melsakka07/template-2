@@ -22,6 +22,13 @@ const businessCaseSchema = z.object({
   }),
 });
 
+interface FinancialMetrics {
+  npv: number;
+  irr: number;
+  paybackPeriod: number;
+  roi: number;
+}
+
 function cleanJsonResponse(text: string): string {
   // Remove any text before the first {
   const startIndex = text.indexOf('{');
@@ -57,6 +64,129 @@ function calculateFinancialProjections(data: {
   return projections;
 }
 
+function calculateFinancialMetrics(projections: any[], capex: number): FinancialMetrics {
+  const discountRate = 0.1; // 10% discount rate
+  
+  // Calculate cash flows
+  const cashFlows = projections.map(p => p.revenue - p.opex);
+  cashFlows.unshift(-capex); // Add initial investment as negative cash flow
+
+  // Calculate NPV
+  const npv = cashFlows.reduce((acc, cf, i) => 
+    acc + cf / Math.pow(1 + discountRate, i), 0);
+
+  // Calculate ROI
+  const totalRevenue = projections.reduce((acc, p) => acc + p.revenue, 0);
+  const totalOpex = projections.reduce((acc, p) => acc + p.opex, 0);
+  const roi = ((totalRevenue - totalOpex - capex) / capex) * 100;
+
+  // Simplified IRR (approximation)
+  const irr = (totalRevenue - totalOpex - capex) / (capex * 5) * 100;
+
+  // Calculate Payback Period
+  let cumulativeCashFlow = -capex;
+  let paybackPeriod = 0;
+  for (let i = 0; i < projections.length; i++) {
+    cumulativeCashFlow += projections[i].revenue - projections[i].opex;
+    if (cumulativeCashFlow > 0 && paybackPeriod === 0) {
+      paybackPeriod = i + 1;
+      break;
+    }
+  }
+
+  return {
+    npv: Math.round(npv),
+    irr: Math.round(irr),
+    paybackPeriod,
+    roi: Math.round(roi),
+  };
+}
+
+async function generateMarketAnalysis(data: any) {
+  const marketPrompt = `Analyze the market potential and competitive landscape for this project:
+
+Industry: ${data.industry}
+Country: ${data.country}
+Initial Customer Base: ${data.customers.initialCount}
+Growth Rate: ${data.customers.growthRate}%
+
+Provide a JSON response with:
+1. Market size and potential
+2. Competitive analysis
+3. Market trends
+4. Growth opportunities
+5. Entry barriers
+
+Format:
+{
+  "marketSize": "analysis of total addressable market",
+  "competitiveAnalysis": "detailed competitor analysis",
+  "marketTrends": "key industry trends",
+  "growthOpportunities": "specific growth areas",
+  "entryBarriers": "main barriers to entry"
+}`;
+
+  const marketResponse = await openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a market research analyst. Provide detailed market insights in JSON format.',
+      },
+      {
+        role: 'user',
+        content: marketPrompt,
+      },
+    ],
+    temperature: 0.7,
+  });
+
+  return JSON.parse(cleanJsonResponse(marketResponse.choices[0].message.content || '{}'));
+}
+
+async function generateRiskAnalysis(data: any, financialMetrics: FinancialMetrics) {
+  const riskPrompt = `Analyze the risks and mitigation strategies for this project:
+
+Project: ${data.projectName}
+Industry: ${data.industry}
+CAPEX: $${data.financials.capex}
+ROI: ${financialMetrics.roi}%
+Payback Period: ${financialMetrics.paybackPeriod} years
+
+Provide a JSON response with:
+1. Risk categories and specific risks
+2. Impact assessment
+3. Mitigation strategies
+4. Contingency plans
+5. Risk monitoring approach
+
+Format:
+{
+  "operationalRisks": "analysis of operational risks",
+  "financialRisks": "analysis of financial risks",
+  "marketRisks": "analysis of market risks",
+  "technicalRisks": "analysis of technical risks",
+  "mitigationStrategies": "detailed mitigation approaches"
+}`;
+
+  const riskResponse = await openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a risk management expert. Provide detailed risk analysis in JSON format.',
+      },
+      {
+        role: 'user',
+        content: riskPrompt,
+      },
+    ],
+    temperature: 0.7,
+  });
+
+  return JSON.parse(cleanJsonResponse(riskResponse.choices[0].message.content || '{}'));
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -65,12 +195,21 @@ export async function POST(req: Request) {
     // Pre-calculate the financial projections
     const projections = calculateFinancialProjections({
       initialCount: validatedData.customers.initialCount,
-      growthRate: validatedData.customers.growthRate / 100, // Convert percentage to decimal
+      growthRate: validatedData.customers.growthRate / 100,
       arpu: validatedData.customers.arpu,
       opex: validatedData.financials.opex,
     });
 
-    const prompt = `Generate a comprehensive business case report for the following project. Your response must be a valid JSON object with no additional text before or after. Use the exact numbers provided for financial projections.
+    // Calculate financial metrics
+    const financialMetrics = calculateFinancialMetrics(projections, validatedData.financials.capex);
+
+    // Generate additional analyses
+    const [marketAnalysis, riskAnalysis] = await Promise.all([
+      generateMarketAnalysis(validatedData),
+      generateRiskAnalysis(validatedData, financialMetrics),
+    ]);
+
+    const prompt = `Generate a comprehensive business case report for the following project. Include all provided analyses in your response.
 
 Project Name: ${validatedData.projectName}
 Company: ${validatedData.company}
@@ -87,30 +226,50 @@ Customer Information:
 - Growth Rate: ${validatedData.customers.growthRate}%
 - Average Revenue Per User (ARPU): $${validatedData.customers.arpu}
 
-Use these exact financial projections in your response:
-${JSON.stringify(projections, null, 2)}
+Financial Metrics:
+- Net Present Value (NPV): $${financialMetrics.npv}
+- Internal Rate of Return (IRR): ${financialMetrics.irr}%
+- Return on Investment (ROI): ${financialMetrics.roi}%
+- Payback Period: ${financialMetrics.paybackPeriod} years
+
+Market Analysis: ${JSON.stringify(marketAnalysis, null, 2)}
+Risk Analysis: ${JSON.stringify(riskAnalysis, null, 2)}
 
 Your response must be a JSON object with this structure:
 {
-  "executiveSummary": "2-3 paragraphs summarizing the business case",
+  "executiveSummary": "comprehensive summary including key metrics and insights",
   "financialProjections": ${JSON.stringify(projections, null, 2)},
-  "roiAnalysis": "detailed analysis of return on investment",
-  "riskAssessment": "key risks and mitigation strategies",
-  "implementationTimeline": "high-level timeline for implementation"
-}
-
-Requirements:
-1. Response must be valid JSON with no additional text
-2. Use the EXACT financial projection numbers provided above
-3. Do not perform any calculations - use the numbers exactly as provided
-4. Focus on analysis and insights in the text sections`;
+  "marketAnalysis": ${JSON.stringify(marketAnalysis, null, 2)},
+  "financialAnalysis": {
+    "metrics": ${JSON.stringify(financialMetrics, null, 2)},
+    "analysis": "detailed financial analysis and insights"
+  },
+  "riskAssessment": ${JSON.stringify(riskAnalysis, null, 2)},
+  "implementationTimeline": {
+    "phases": [
+      {
+        "phase": "string",
+        "duration": "string",
+        "keyActivities": "string",
+        "deliverables": "string"
+      }
+    ],
+    "criticalPath": "string",
+    "keyMilestones": "string"
+  },
+  "recommendations": {
+    "strategic": "string",
+    "operational": "string",
+    "financial": "string"
+  }
+}`;
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4',
       messages: [
         {
           role: 'system',
-          content: 'You are a business analyst expert. Respond only with a valid JSON object containing the business case report. Do not perform any calculations - use the exact numbers provided. Do not include any additional text, markdown formatting, or explanations outside the JSON structure.',
+          content: 'You are a business analyst expert. Create a comprehensive business case report incorporating all provided analyses. Maintain the exact structure and use the provided data.',
         },
         {
           role: 'user',
@@ -126,17 +285,19 @@ Requirements:
     }
 
     try {
-      // Clean and parse the response
       const cleanedResult = cleanJsonResponse(result);
       const parsedResult = JSON.parse(cleanedResult);
 
-      // Validate the structure of the parsed result
+      // Validate and ensure consistent data
       if (!parsedResult.executiveSummary || !Array.isArray(parsedResult.financialProjections)) {
         throw new Error('Invalid report structure');
       }
 
-      // Ensure we use our pre-calculated projections
+      // Ensure we use our pre-calculated values
       parsedResult.financialProjections = projections;
+      parsedResult.financialAnalysis.metrics = financialMetrics;
+      parsedResult.marketAnalysis = marketAnalysis;
+      parsedResult.riskAssessment = riskAnalysis;
 
       return new Response(JSON.stringify(parsedResult), {
         headers: { 'Content-Type': 'application/json' },
