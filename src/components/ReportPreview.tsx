@@ -67,7 +67,6 @@ interface ReportPreviewProps {
       financial: string;
     };
   };
-  onExport: (format: 'docx' | 'pdf') => void;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
@@ -90,7 +89,40 @@ function formatCurrency(value: number): string {
   return `$${value}`;
 }
 
-export function ReportPreview({ data, onExport }: ReportPreviewProps) {
+export function ReportPreview({ data }: ReportPreviewProps) {
+  const handleExport = async (format: 'docx' | 'pdf') => {
+    try {
+      const response = await fetch(`/api/export/${format}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to generate ${format.toUpperCase()}`);
+      }
+
+      // Get the blob from the response
+      const blob = await response.blob();
+      
+      // Create a download link and trigger the download
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `business-case-report.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(`Error exporting ${format}:`, error);
+      // You might want to add a toast notification here
+      alert(`Failed to export as ${format.toUpperCase()}`);
+    }
+  };
+
   // Calculate cumulative cash flow for the break-even chart
   const cumulativeCashFlow = data.financialProjections.reduce((acc: any[], projection: any) => {
     const previousValue = acc.length > 0 ? acc[acc.length - 1].cumulative : 0;
@@ -135,20 +167,20 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                 <ResponsiveContainer>
                   <LineChart
                     data={data.financialProjections}
-                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                    margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="year" />
                     <YAxis 
                       yAxisId="left"
                       tickFormatter={(value) => formatCurrency(value)}
-                      label={{ value: 'Revenue', angle: -90, position: 'insideLeft' }}
+                      label={{ value: 'Revenue', angle: -90, position: 'insideLeft', offset: -45 }}
                     />
                     <YAxis 
                       yAxisId="right" 
                       orientation="right"
                       tickFormatter={(value) => formatNumber(value)}
-                      label={{ value: 'Customers', angle: 90, position: 'insideRight' }}
+                      label={{ value: 'Customers', angle: 90, position: 'insideRight', offset: -45 }}
                     />
                     <Tooltip 
                       formatter={(value: number, name: string) => {
@@ -183,13 +215,13 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                 <ResponsiveContainer>
                   <LineChart
                     data={cumulativeCashFlow}
-                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                    margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="year" />
                     <YAxis 
                       tickFormatter={(value) => formatCurrency(value)}
-                      label={{ value: 'Cumulative Cash Flow', angle: -90, position: 'insideLeft' }}
+                      label={{ value: 'Cumulative Cash Flow', angle: -90, position: 'insideLeft', offset: -45 }}
                     />
                     <Tooltip 
                       formatter={(value: number) => [formatCurrency(value), 'Cumulative Cash Flow']}
@@ -213,13 +245,13 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
                 <ResponsiveContainer>
                   <BarChart
                     data={data.financialProjections}
-                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                    margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="year" />
                     <YAxis 
                       tickFormatter={(value) => formatCurrency(value)}
-                      label={{ value: 'Amount', angle: -90, position: 'insideLeft' }}
+                      label={{ value: 'Amount', angle: -90, position: 'insideLeft', offset: -45 }}
                     />
                     <Tooltip 
                       formatter={(value: number) => [formatCurrency(value), '']}
@@ -449,10 +481,10 @@ export function ReportPreview({ data, onExport }: ReportPreviewProps) {
       </Card>
 
       <div className="flex justify-end space-x-4">
-        <Button variant="outline" onClick={() => onExport('docx')}>
+        <Button variant="outline" onClick={() => handleExport('docx')}>
           Export as DOCX
         </Button>
-        <Button variant="outline" onClick={() => onExport('pdf')}>
+        <Button variant="outline" onClick={() => handleExport('pdf')}>
           Export as PDF
         </Button>
       </div>
