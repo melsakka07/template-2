@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ReportPreview } from '@/components/ReportPreview';
 import { generateDocx } from '@/lib/export/docxConverter';
 import { generatePdf } from '@/lib/export/pdfConverter';
-import { Download, Upload, Save } from 'lucide-react';
+import { Download, Upload, Save, InfoIcon } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 
 const businessCaseSchema = z.object({
@@ -21,14 +21,17 @@ const businessCaseSchema = z.object({
   country: z.string().min(2, 'Country must be at least 2 characters'),
   industry: z.string().min(2, 'Industry must be at least 2 characters'),
   financials: z.object({
-    totalCost: z.number().min(0),
-    capex: z.number().min(0),
-    opex: z.number().min(0),
+    totalCost: z.number().min(0, 'Total cost must be a positive number'),
+    capex: z.number().min(0, 'CAPEX must be a positive number'),
+    opex: z.number().min(0, 'OPEX must be a positive number'),
+  }).refine((data) => data.totalCost >= (data.capex + data.opex), {
+    message: "Total cost must be greater than or equal to CAPEX + OPEX",
+    path: ["totalCost"],
   }),
   customers: z.object({
-    initialCount: z.number().min(0),
-    growthRate: z.number().min(0),
-    arpu: z.number().min(0),
+    initialCount: z.number().min(1, 'Initial customer count must be at least 1'),
+    growthRate: z.number().min(0, 'Growth rate must be a positive number').max(100, 'Growth rate cannot exceed 100%'),
+    arpu: z.number().min(0, 'ARPU must be a positive number'),
   }),
 });
 
@@ -55,6 +58,13 @@ interface ReportData {
       irr: number;
       paybackPeriod: number;
       roi: number;
+      breakEvenPoint: number;
+      cac: number;
+      clv: number;
+      grossMargin: number[];
+      operatingMargin: number[];
+      ebitda: number[];
+      workingCapital: number[];
     };
     analysis: string;
   };
@@ -92,19 +102,27 @@ export function BusinessCaseForm() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showTooltip, setShowTooltip] = useState<string | null>(null);
-  const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
-    const saved = localStorage.getItem('autoSaveEnabled');
-    return saved ? JSON.parse(saved) : true;
-  });
+  const [tooltipContent, setTooltipContent] = useState<string | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
   const [formProgress, setFormProgress] = useState(0);
   
-  const { register, handleSubmit, formState: { errors }, reset, getValues } = useForm<BusinessCaseData>({
+  const { register, handleSubmit, formState: { errors }, reset, getValues, setValue, watch } = useForm<BusinessCaseData>({
     resolver: zodResolver(businessCaseSchema),
     defaultValues: {
       financials: { totalCost: 0, capex: 0, opex: 0 },
       customers: { initialCount: 0, growthRate: 0, arpu: 0 },
     },
+    mode: 'onChange',
   });
+
+  // Initialize autoSaveEnabled from localStorage on client-side
+  useEffect(() => {
+    const saved = localStorage.getItem('autoSaveEnabled');
+    if (saved !== null) {
+      setAutoSaveEnabled(JSON.parse(saved));
+    }
+  }, []);
 
   useEffect(() => {
     if (autoSaveEnabled) {
@@ -131,18 +149,44 @@ export function BusinessCaseForm() {
     if (typeof value === 'number') return value !== 0;
     if (typeof value === 'string') return value.trim() !== '';
     if (typeof value === 'object') {
-      return Object.values(value as Record<string, unknown>).some(isFieldFilled);
+      if (!value) return false;
+      return Object.values(value).some(isFieldFilled);
     }
     return false;
   };
 
+  // Update form progress whenever form values change
   useEffect(() => {
     const formData = getValues();
-    const totalFields = Object.keys(businessCaseSchema.shape).length;
-    const filledFields = Object.entries(formData).filter(([_, value]) => isFieldFilled(value)).length;
-    
+    let totalFields = 0;
+    let filledFields = 0;
+
+    // Count basic fields
+    ['projectName', 'company', 'country', 'industry'].forEach(field => {
+      totalFields++;
+      if (isFieldFilled(formData[field as keyof BusinessCaseData])) {
+        filledFields++;
+      }
+    });
+
+    // Count financial fields
+    ['totalCost', 'capex', 'opex'].forEach(field => {
+      totalFields++;
+      if (isFieldFilled(formData.financials[field as keyof typeof formData.financials])) {
+        filledFields++;
+      }
+    });
+
+    // Count customer fields
+    ['initialCount', 'growthRate', 'arpu'].forEach(field => {
+      totalFields++;
+      if (isFieldFilled(formData.customers[field as keyof typeof formData.customers])) {
+        filledFields++;
+      }
+    });
+
     setFormProgress(Math.round((filledFields / totalFields) * 100));
-  }, [getValues]);
+  }, [getValues, watch()]);
 
   const handleExportFormData = async () => {
     setIsSaving(true);
@@ -229,6 +273,42 @@ export function BusinessCaseForm() {
     } catch (error) {
       console.error(`Error exporting as ${format}:`, error);
     }
+  };
+
+  // Format currency inputs
+  const formatCurrency = (value: number): string => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
+
+  // Handle currency input changes
+  const handleCurrencyChange = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
+    const value = e.target.value.replace(/[^0-9]/g, '');
+    setValue(field as any, Number(value), { shouldValidate: true });
+  };
+
+  const handleTooltip = (content: string, event: React.MouseEvent<HTMLLabelElement>) => {
+    setTooltipContent(content);
+    setTooltipPosition({ x: event.clientX, y: event.clientY });
+  };
+
+  const hideTooltip = () => {
+    setTooltipContent(null);
+  };
+
+  // Format percentage inputs
+  const formatPercentage = (value: number): string => {
+    return `${value}%`;
+  };
+
+  // Handle percentage input changes
+  const handlePercentageChange = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
+    const value = e.target.value.replace(/[^0-9]/g, '');
+    setValue(field as any, Number(value), { shouldValidate: true });
   };
 
   return (
@@ -376,33 +456,66 @@ export function BusinessCaseForm() {
           <Card className="p-6">
             <div className="space-y-4">
               <div>
-                <Label htmlFor="totalCost">Total Cost of Ownership (TCO)</Label>
+                <Label 
+                  htmlFor="totalCost"
+                  className="flex items-center gap-2"
+                  onMouseEnter={(e) => handleTooltip('Total Cost of Ownership includes all direct and indirect costs', e)}
+                  onMouseLeave={hideTooltip}
+                >
+                  Total Cost of Ownership (TCO)
+                  <InfoIcon className="w-4 h-4 text-muted-foreground" />
+                </Label>
                 <Input
                   id="totalCost"
-                  type="number"
-                  {...register('financials.totalCost', { valueAsNumber: true })}
-                  className="mt-1"
+                  value={formatCurrency(watch('financials.totalCost'))}
+                  onChange={(e) => handleCurrencyChange(e, 'financials.totalCost')}
+                  className={`mt-1 ${errors.financials?.totalCost ? 'border-red-500' : ''}`}
                 />
+                {errors.financials?.totalCost && (
+                  <p className="text-red-500 text-sm mt-1">{errors.financials.totalCost?.message || 'Invalid value'}</p>
+                )}
               </div>
 
               <div>
-                <Label htmlFor="capex">Capital Expenditure (CAPEX)</Label>
+                <Label 
+                  htmlFor="capex"
+                  className="flex items-center gap-2"
+                  onMouseEnter={(e) => handleTooltip('Capital Expenditure: One-time costs for long-term assets', e)}
+                  onMouseLeave={hideTooltip}
+                >
+                  Capital Expenditure (CAPEX)
+                  <InfoIcon className="w-4 h-4 text-muted-foreground" />
+                </Label>
                 <Input
                   id="capex"
-                  type="number"
-                  {...register('financials.capex', { valueAsNumber: true })}
-                  className="mt-1"
+                  value={formatCurrency(watch('financials.capex'))}
+                  onChange={(e) => handleCurrencyChange(e, 'financials.capex')}
+                  className={`mt-1 ${errors.financials?.capex ? 'border-red-500' : ''}`}
                 />
+                {errors.financials?.capex && (
+                  <p className="text-red-500 text-sm mt-1">{errors.financials.capex?.message || 'Invalid value'}</p>
+                )}
               </div>
 
               <div>
-                <Label htmlFor="opex">Operating Expenditure (OPEX)</Label>
+                <Label 
+                  htmlFor="opex"
+                  className="flex items-center gap-2"
+                  onMouseEnter={(e) => handleTooltip('Operating Expenditure: Ongoing costs for running the business', e)}
+                  onMouseLeave={hideTooltip}
+                >
+                  Operating Expenditure (OPEX)
+                  <InfoIcon className="w-4 h-4 text-muted-foreground" />
+                </Label>
                 <Input
                   id="opex"
-                  type="number"
-                  {...register('financials.opex', { valueAsNumber: true })}
-                  className="mt-1"
+                  value={formatCurrency(watch('financials.opex'))}
+                  onChange={(e) => handleCurrencyChange(e, 'financials.opex')}
+                  className={`mt-1 ${errors.financials?.opex ? 'border-red-500' : ''}`}
                 />
+                {errors.financials?.opex && (
+                  <p className="text-red-500 text-sm mt-1">{errors.financials.opex?.message || 'Invalid value'}</p>
+                )}
               </div>
             </div>
           </Card>
@@ -412,33 +525,91 @@ export function BusinessCaseForm() {
           <Card className="p-6">
             <div className="space-y-4">
               <div>
-                <Label htmlFor="initialCount">Initial Customer Count</Label>
+                <Label 
+                  htmlFor="initialCount"
+                  className="flex items-center gap-2"
+                  onMouseEnter={(e) => handleTooltip('Starting number of customers for your business case', e)}
+                  onMouseLeave={hideTooltip}
+                >
+                  Initial Customer Count
+                  <InfoIcon className="w-4 h-4 text-muted-foreground" />
+                </Label>
                 <Input
                   id="initialCount"
                   type="number"
-                  {...register('customers.initialCount', { valueAsNumber: true })}
-                  className="mt-1"
+                  value={watch('customers.initialCount')}
+                  onChange={(e) => setValue('customers.initialCount', Number(e.target.value), { shouldValidate: true })}
+                  className={`mt-1 ${errors.customers?.initialCount ? 'border-red-500' : ''}`}
+                  min="1"
                 />
+                {errors.customers?.initialCount && (
+                  <p className="text-red-500 text-sm mt-1">{errors.customers.initialCount?.message || 'Invalid value'}</p>
+                )}
+                <p className="text-sm text-muted-foreground mt-1">
+                  Enter the number of customers you expect to start with
+                </p>
               </div>
 
               <div>
-                <Label htmlFor="growthRate">Growth Rate (%)</Label>
+                <Label 
+                  htmlFor="growthRate"
+                  className="flex items-center gap-2"
+                  onMouseEnter={(e) => handleTooltip('Expected annual growth rate of your customer base', e)}
+                  onMouseLeave={hideTooltip}
+                >
+                  Growth Rate (%)
+                  <InfoIcon className="w-4 h-4 text-muted-foreground" />
+                </Label>
                 <Input
                   id="growthRate"
-                  type="number"
-                  {...register('customers.growthRate', { valueAsNumber: true })}
-                  className="mt-1"
+                  value={formatPercentage(watch('customers.growthRate'))}
+                  onChange={(e) => handlePercentageChange(e, 'customers.growthRate')}
+                  className={`mt-1 ${errors.customers?.growthRate ? 'border-red-500' : ''}`}
                 />
+                {errors.customers?.growthRate && (
+                  <p className="text-red-500 text-sm mt-1">{errors.customers.growthRate?.message || 'Invalid value'}</p>
+                )}
+                <p className="text-sm text-muted-foreground mt-1">
+                  Enter the expected yearly growth rate (0-100%)
+                </p>
               </div>
 
               <div>
-                <Label htmlFor="arpu">Average Revenue Per User (ARPU)</Label>
+                <Label 
+                  htmlFor="arpu"
+                  className="flex items-center gap-2"
+                  onMouseEnter={(e) => handleTooltip('Average Revenue Per User: Expected revenue from each customer per month', e)}
+                  onMouseLeave={hideTooltip}
+                >
+                  Average Revenue Per User (ARPU)
+                  <InfoIcon className="w-4 h-4 text-muted-foreground" />
+                </Label>
                 <Input
                   id="arpu"
-                  type="number"
-                  {...register('customers.arpu', { valueAsNumber: true })}
-                  className="mt-1"
+                  value={formatCurrency(watch('customers.arpu'))}
+                  onChange={(e) => handleCurrencyChange(e, 'customers.arpu')}
+                  className={`mt-1 ${errors.customers?.arpu ? 'border-red-500' : ''}`}
                 />
+                {errors.customers?.arpu && (
+                  <p className="text-red-500 text-sm mt-1">{errors.customers.arpu?.message || 'Invalid value'}</p>
+                )}
+                <p className="text-sm text-muted-foreground mt-1">
+                  Enter the average monthly revenue expected per customer
+                </p>
+              </div>
+
+              <div className="mt-6 bg-muted p-4 rounded-lg">
+                <h3 className="text-sm font-medium mb-2">Projected First Year Revenue</h3>
+                <p className="text-2xl font-bold">
+                  {formatCurrency(
+                    watch('customers.initialCount') * 
+                    watch('customers.arpu') * 
+                    12
+                  )}
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Based on initial customers and ARPU (annually)
+                </p>
               </div>
             </div>
           </Card>
@@ -458,6 +629,18 @@ export function BusinessCaseForm() {
           )}
         </TabsContent>
       </Tabs>
+
+      {tooltipContent && (
+        <div
+          className="fixed bg-black text-white px-4 py-2 rounded-lg text-sm z-50 pointer-events-none"
+          style={{
+            left: tooltipPosition.x + 10,
+            top: tooltipPosition.y - 10,
+          }}
+        >
+          {tooltipContent}
+        </div>
+      )}
 
       <div className="mt-6 flex justify-end space-x-4">
         <Button

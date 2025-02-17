@@ -27,6 +27,13 @@ interface FinancialMetrics {
   irr: number;
   paybackPeriod: number;
   roi: number;
+  ebitda: number[];
+  grossMargin: number[];
+  operatingMargin: number[];
+  breakEvenPoint: number;
+  cac: number;
+  clv: number;
+  workingCapital: number[];
 }
 
 function cleanJsonResponse(text: string): string {
